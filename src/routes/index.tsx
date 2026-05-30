@@ -7,7 +7,7 @@ import { fetchJDFromUrl } from "../lib/api/urlFetcher";
 import { buildAndDownloadDocx } from "../lib/docxBuilder";
 import { scoreATS, flattenResumeToText } from "../lib/atsScorer";
 import { checkAndIncrementRate, getTodayCount } from "../lib/rateLimit";
-import { addApplication } from "../lib/appTracker";
+import { addApplication, getApplications, updateApplication } from "../lib/appTracker";
 import { detectInputType, validateJD } from "../lib/promptBuilder";
 import { DAILY_REQUEST_LIMIT } from "../lib/config";
 import type { ResumeJSON } from "../types/resume";
@@ -90,14 +90,9 @@ function Index() {
 
   const handleGenerate = useCallback(async () => {
     setError("");
+    setShowDiff(false);
     const trimmedJD = jd.trim();
     if (!trimmedJD) return;
-
-    // Rate check
-    try { checkAndIncrementRate(); } catch (e) {
-      setError((e as Error).message);
-      return;
-    }
 
     let finalJD = trimmedJD;
 
@@ -129,6 +124,13 @@ function Index() {
       setStatus("done");
       setActiveTab("resume");
 
+      // Rate check (only on success)
+      try { checkAndIncrementRate(); } catch (e) {
+        setStatus("error");
+        setError((e as Error).message);
+        return;
+      }
+
       // Log to application tracker
       const ats = scoreATS(flattenResumeToText(result.resume), result.resume.meta.jd_keywords_extracted);
       addApplication({
@@ -153,10 +155,9 @@ function Index() {
     try {
       const filename = await buildAndDownloadDocx(resume);
       // Update the latest tracker entry with filename
-      const apps = JSON.parse(localStorage.getItem("resumeos_applications") ?? "[]");
+      const apps = getApplications();
       if (apps.length > 0 && !apps[0].resumeFilename) {
-        apps[0].resumeFilename = filename;
-        localStorage.setItem("resumeos_applications", JSON.stringify(apps));
+        updateApplication(apps[0].id, { resumeFilename: filename });
       }
     } catch (e) {
       setError(`Download failed: ${(e as Error).message}`);
@@ -174,6 +175,7 @@ function Index() {
       setStatus("done");
     } catch (e) {
       setStatus("error");
+      setStatusMsg("");
       setError((e as Error).message);
     }
   };
